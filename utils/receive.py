@@ -2,7 +2,6 @@ import json
 from loguru import logger
 import asyncio
 import re
-from app.database import MongoDB
 
 # 定义监听端口
 LISTEN_PORT = 3001
@@ -24,7 +23,6 @@ def request_to_json(msg):
     
 # 用于接收消息的队列
 message_queue = asyncio.Queue()
-db=MongoDB()
 
 # 捕获并处理优先级命令
 async def handle_priority_command(rev_json):
@@ -73,8 +71,6 @@ async def handle_client(reader, writer):
         user_input = rev_json.get('raw_message', '')
         
         if user_input:  # 仅在有 user_input 时存储消息并处理
-            db.insert_chat_message(user_id, user_input, '', context_type, context_id)  # 此处response_text传空，后续可以更新
-
             # 如果是优先级命令，直接处理
             if await handle_priority_command(rev_json):
                 response = HttpResponseHeader + '\r\n\r\n'

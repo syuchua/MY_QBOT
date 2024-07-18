@@ -39,6 +39,7 @@ class Config:
         self.AUDIO_SAVE_PATH = self.config_data.get('audio_save_path')
         self.VOICE_SERVICE_URL = self.config_data.get('voice_service_url')
         self.CHA_NAME = self.config_data.get('cha_name')
+        self.MESSAGE_QUEUE_SIZE = self.config_data.get('message_queue_size', 10)
         self.R18 = self.config_data.get('r18')
         self.ADMIN_TITLES = self.config_data.get('admin_titles')
 

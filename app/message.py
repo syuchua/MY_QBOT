@@ -1,4 +1,4 @@
-import logging
+import logger
 import re
 import time
 import aiohttp
@@ -9,6 +9,7 @@ from app.command import handle_command
 from utils.voice_service import generate_voice
 from utils.model_request import get_chat_response
 from app.function_calling import handle_image_request, handle_voice_request, handle_image_recognition
+from app.logger import logger
 
 config = Config.get_instance()
 
@@ -28,27 +29,27 @@ async def send_msg(msg_type, number, msg, use_voice=False):
         async with aiohttp.ClientSession() as session:
             async with session.post(url, json=params) as res:
                 res.raise_for_status()
-                logging.info(f"Message sent successfully: {msg}")
+                logger.info(f"Message sent successfully: {msg}")
                 try:
                     print(f"\nsend_{msg_type}_msg: {msg}\n", await res.json())
                 except aiohttp.ClientResponseError:
                     print(f"\nsend_{msg_type}_msg: {msg}\n", await res.text())
     except aiohttp.ClientError as e:
-        logging.error(f"HTTP error occurred: {e}")
+        logger.error(f"HTTP error occurred: {e}")
 
 async def send_image(msg_type, number, img_url):
     try:
         image_msg = f"[CQ:image,file={img_url}]"
         await send_msg(msg_type, number, image_msg)
-        logging.info(f"Image sent to {number}.")
+        logger.info(f"Image sent to {number}.")
     except aiohttp.ClientError as e:
-        logging.error(f"Failed to send image due to HTTP error: {e}")
+        logger.error(f"Failed to send image due to HTTP error: {e}")
         await send_msg(msg_type, number, "发送图片失败，请检查网络或稍后再试。")
     except asyncio.TimeoutError as e:
-        logging.error(f"Failed to send image due to timeout: {e}")
+        logger.error(f"Failed to send image due to timeout: {e}")
         await send_msg(msg_type, number, "发送图片超时，请稍后再试。")
     except Exception as e:
-        logging.error(f"Failed to send image due to an unexpected error: {e}")
+        logger.error(f"Failed to send image due to an unexpected error: {e}")
         await send_msg(msg_type, number, "出现了一些意外情况，图片发送失败。")
 
 async def send_voice(msg_type, number, voice_text):
@@ -57,12 +58,12 @@ async def send_voice(msg_type, number, voice_text):
         if audio_filename:
             voice_msg = f"[CQ:record,file=http://localhost:4321/data/voice/{audio_filename}]"
             await send_msg(msg_type, number, voice_msg)
-            logging.info(f"Voice message sent to {number}.")
+            logger.info(f"Voice message sent to {number}.")
         else:
-            logging.error(f"Failed to generate voice message for text: {voice_text}")
+            logger.error(f"Failed to generate voice message for text: {voice_text}")
             await send_msg(msg_type, number, "语音合成失败，请稍后再试。")
     except aiohttp.ClientError as e:
-        logging.error(f"Failed to send voice message due to HTTP error: {e}")
+        logger.error(f"Failed to send voice message due to HTTP error: {e}")
         await send_msg(msg_type, number, "发送语音失败，请检查网络或稍后再试。")
 
 def get_dialogue_response(user_input):
@@ -121,7 +122,7 @@ async def process_chat_message(rev, msg_type):
         try:
             response_text = await get_chat_response(messages)
         except Exception as e:
-            logging.error(f"Error processing message: {e}")
+            logger.error(f"Error processing message: {e}")
             await send_msg(msg_type, recipient_id, "阿巴阿巴，出错了。")
 
     # 替换管理员称呼

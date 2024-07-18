@@ -1,4 +1,7 @@
+import base64
 import json
+
+import httpx
 from app.logger import logger
 import os
 import aiohttp
@@ -50,6 +53,7 @@ class ClaudeClient(ModelClient):
         }
         return await self.request('messages', payload)
 
+
 # 读取配置文件
 def load_config():
     config_dir = os.path.join(os.path.dirname(__file__), '../config')
@@ -72,16 +76,11 @@ def get_client(default_config, model_config):
                 api_key = settings['api_key']
                 base_url = settings['base_url']
                 timeout = settings.get('timeout', 120)  # 使用模型配置中的 timeout，默认为 120
-                if 'claude' in model_name.lower():  # 检测是否包含关键词 "claude"
-                    client = ClaudeClient(api_key, base_url, timeout)
-                    client_type = 'claude'
-                else:
-                    client = OpenAIClient(api_key, base_url, timeout)
-                    client_type = 'openai'
+                client = OpenAIClient(api_key, base_url, timeout)  # 默认使用 OpenAI 模型进行对话生成               
                 logger.info(f"Using model '{model_name}' with base_url: {base_url}")
                 # 检查是否支持图像识别
                 supports_image_recognition = settings.get('vision', False)
-                return client, client_type
+                return client
         # 如果指定的 model 没有找到可用模型
         logger.warning(f"Model '{model_name}' not found in available models. Using default config.json settings.")
         supports_image_recognition = False
@@ -94,58 +93,44 @@ def get_client(default_config, model_config):
     api_key = default_config.get('openai_api_key')
     base_url = default_config.get('proxy_api_base', 'https://api.openai.com/v1') 
     timeout = 120
-    client = OpenAIClient(api_key, base_url, timeout)
-    client_type = 'openai'
+    client = OpenAIClient(api_key, base_url, timeout) 
     logger.info(f"Using default settings with base_url: {base_url}")
     supports_image_recognition = True if default_config.get("model", "").startswith("gpt-4") else False
-    return client, client_type
+    return client
 
 # 确保只调用一次
 if 'client' not in globals():
     default_config, model_config = load_config()
-    client, client_type = get_client(default_config, model_config)
+    client = get_client(default_config, model_config)
+
 
 async def get_chat_response(messages):
     system_message = model_config.get('system_message', {}).get('character', '') or default_config.get('system_message', {}).get('character', '')
-    if client_type == 'claude':
-        # 移除已有的 `system` 消息
-        messages = [msg for msg in messages if msg['role'] != 'system']
-        # 确保没有不必要的字段
-        clean_messages = [{"role": msg["role"], "content": msg["content"]} for msg in messages]
-        try:
-            response = await client.chat_completion(
-                model="claude-3-5-sonnet@20240620",
-                system=system_message,
-                max_tokens=1000,
-                messages=clean_messages
-            )
-            return response['content'][0]['text'].strip()
-        except Exception as e:
-            raise Exception(f"Error during API request: {e}")
-    
-    else:
-        if system_message:
-            messages.insert(0, {"role": "system", "content": system_message})
 
-        try:
-            response = await client.chat_completion(
-                model=model_config.get('model') or default_config.get('model', 'gpt-3.5-turbo'),
-                messages=messages,
-                temperature=0.5,
-                max_tokens=1000,
-                top_p=0.95,
-                stream=False,
-                stop=None,
-                presence_penalty=0
-            )
-            return response['choices'][0]['message']['content'].strip()
-        except Exception as e:
-            raise Exception(f"Error during API request: {e}")
+    if system_message:
+        messages.insert(0, {"role": "system", "content": system_message})
+
+    try:
+        response = await client.chat_completion(
+            model=model_config.get('model') or default_config.get('model', 'gpt-3.5-turbo'),
+            messages=messages,
+            temperature=0.5,
+            max_tokens=2000,
+            top_p=0.95,
+            stream=False,
+            stop=None,
+            presence_penalty=0
+        )
+        return response['choices'][0]['message']['content'].strip()
+    except Exception as e:
+        raise Exception(f"Error during API request: {e}")
 
 async def generate_image(prompt):
+    if not supports_image_recognition:
+        raise Exception("API does not support image generation.")
     try:
         response = await client.image_generation(
-            model="glm-4",
+            model="dalle-2",
             prompt=prompt,
             size="1024x1024",
             quality="standard",
@@ -166,12 +151,18 @@ async def recognize_image(cq_code):
         if not image_url:
             raise ValueError("No valid image URL found in CQ code")
         
+        # 获取图像数据
+        async with httpx.AsyncClient() as client:
+            response = await client.get(image_url)
+            image_data = base64.b64encode(response.content).decode("utf-8")
+        
         # 准备消息
-        message_content = f"识别图片：图像URL:{image_url}"
-        logger.info(f"Sending image for recognition: {message_content}")
-        messages = [{"role": "user", "content": message_content}]
+        message_content = f"识别图片并用中文回复，图片base64编码:{image_data}"
+        
+        logger.info(f"Sending image for recognition")
         
         # 使用 get_chat_response 函数获取聊天响应
+        messages = [{"role": "user", "content": message_content}]
         response_text = await get_chat_response(messages)
         
         return response_text
